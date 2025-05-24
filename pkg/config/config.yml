@@ -1,0 +1,13 @@
+SERVER_PORT: "8080"
+APP_ENV: "development" # "production" atau "development"
+AUTH_SECRET: "your-very-secret-key"
+
+SERVICE_ENDPOINTS:
+  user_service: "http://localhost:8081/api/users"
+  product_service: "http://localhost:8082/api/products"
+  order_service: "http://localhost:8083/api/orders"
+
+RATE_LIMIT:
+  ENABLED: true
+  REQUESTS: 100 # request per IP
+  WINDOW_SEC: 60 # per menit
