@@ -5,52 +5,63 @@ import (
 	"log"
 	"os"
 
-	"api-gateway-go/pkg/config" // Sesuaikan dengan nama modul Anda
+	"api-gateway-go/pkg/config"
+	"api-gateway-go/pkg/database"
 	"api-gateway-go/pkg/routes"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm" // Impor GORM
 )
 
 func main() {
-	// Muat Konfigurasi
-	// Path "." berarti mencari config.yaml di direktori yang sama dengan executable
-	// atau di direktori kerja saat menjalankan `go run`
 	cfg, err := config.LoadConfig(".")
 	if err != nil {
 		log.Fatalf("Gagal memuat konfigurasi: %v", err)
 	}
 
-	// Inisialisasi Gin Engine
+	// Inisialisasi Database GORM
+	var db *gorm.DB // Sekarang bertipe *gorm.DB
+	db, err = database.InitDB(cfg.Database)
+	if err != nil {
+		log.Fatalf("Gagal menginisialisasi database GORM: %v", err)
+	}
+	// GORM tidak memiliki fungsi Close() secara langsung pada *gorm.DB,
+	// tapi Anda bisa mendapatkan *sql.DB underlying jika perlu menutupnya secara eksplisit.
+	// Namun, biasanya koneksi dikelola oleh GORM dan akan tertutup saat aplikasi berhenti.
+	// Untuk penutupan eksplisit (misalnya, dalam defer setelah aplikasi selesai):
+	sqlDB, err := db.DB()
+	if err == nil { // Hanya jika berhasil mendapatkan *sql.DB
+		defer func() {
+			if err := sqlDB.Close(); err != nil {
+				log.Printf("Gagal menutup koneksi database (underlying sql.DB): %v", err)
+			} else {
+				log.Println("Koneksi database (underlying sql.DB) berhasil ditutup.")
+			}
+		}()
+	}
+
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
-		log.Println("Menjalankan dalam mode PRODUKSI")
 	} else {
 		gin.SetMode(gin.DebugMode)
-		log.Println("Menjalankan dalam mode DEBUG")
 	}
-	// gin.Default() sudah menyertakan middleware Logger dan Recovery
 	router := gin.Default()
 
-	// Setup Rute dari pkg/routes
-	routes.SetupRoutes(router, cfg)
+	// Setup Rute, sekarang teruskan *gorm.DB
+	routes.SetupRoutes(router, cfg, db)
 
-	// Dapatkan port dari konfigurasi atau environment variable (untuk platform seperti Heroku)
 	port := cfg.ServerPort
 	if port == "" {
 		envPort := os.Getenv("PORT")
 		if envPort != "" {
 			port = envPort
 		} else {
-			port = "8080" // Port default jika tidak ada yang diset
+			port = "8080"
 		}
 	}
 
-	log.Printf("API Gateway siap dijalankan di port :%s", port)
-	log.Printf("Endpoint Health Check: http://localhost:%s/api/public/health", port)
-	log.Printf("Secret Otentikasi (dummy): %s", cfg.AuthSecret) // Jangan log secret asli di produksi
-	log.Printf("User Service Endpoint: %s", cfg.ServiceEndpoints["user_service"])
-	log.Printf("Product Service Endpoint: %s", cfg.ServiceEndpoints["product_service"])
-
+	log.Printf("API Gateway (dengan GORM) siap dijalankan di port :%s", port)
+	// ... log lainnya
 	if err := router.Run(":" + port); err != nil {
 		log.Fatalf("Gagal menjalankan server Gin: %v", err)
 	}
